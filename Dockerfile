@@ -7,11 +7,53 @@ RUN dnf install -y java-1.8.0-openjdk
 
 RUN dnf install -y procps-ng hostname
 RUN dnf install -y net-tools
+# Aditional dependencies
+RUN dnf install -y wget
+RUN dnf install -y maven
 
 ENV JAVA_HOME /usr/lib/jvm/jre
 
 # Hadoop
-ADD hadoop-${HADOOP_VERSION}.tar.gz /usr/local/
+
+# Download requested version
+ARG HADOOP_HASH
+ENV HADOOP_VERSION ${HADOOP_VERSION:-2.8.1}
+ENV HADOOP_HASH ${HADOOP_HASH:-48d7fba961d5e0636228c5d45ec75d6bb0657b19}
+
+# Download from Apache mirrors instead of archive #9
+ENV APACHE_DIST_URLS \
+  https://www.apache.org/dyn/closer.cgi?action=download&filename= \
+# if the version is outdated (or we're grabbing the .asc file), we might have to pull from the dist/archive :/
+  https://www-us.apache.org/dist/ \
+  https://www.apache.org/dist/ \
+https://archive.apache.org/dist/
+
+RUN set -eux; \
+  download_bin() { \
+    local f="$1"; shift; \
+    local hash="$1"; shift; \
+    local distFile="$1"; shift; \
+    local success=; \
+    local distUrl=; \
+    for distUrl in $APACHE_DIST_URLS; do \
+      if wget -nv -O "$f" "$distUrl$distFile"; then \
+        success=1; \
+        # Checksum the download
+        echo "$hash" "*$f" | sha1sum -c -; \
+        break; \
+      fi; \
+    done; \
+    [ -n "$success" ]; \
+  };\
+   \
+   download_bin "hadoop.tar.gz" "$HADOOP_HASH" "hadoop/core/hadoop-$HADOOP_VERSION/hadoop-$HADOOP_VERSION.tar.gz" 
+
+RUN tar xzf hadoop.tar.gz -C /tmp/
+RUN rm hadoop.tar.gz 
+RUN mv /tmp/hadoop-$HADOOP_VERSION /usr/local/hadoop-$HADOOP_VERSION
+
+# hadoop
+# ADD hadoop-${HADOOP_VERSION}.tar.gz /usr/local/
 RUN ln -s /usr/local/hadoop-${HADOOP_VERSION} /usr/local/hadoop
 
 ENV HADOOP_PREFIX /usr/local/hadoop
@@ -35,6 +77,8 @@ ADD yarn-site.xml $HADOOP_PREFIX/etc/hadoop/yarn-site.xml
 ADD start-hadoop /start-hadoop
 RUN chown root:root /start-hadoop
 RUN chmod 700 /start-hadoop
+
+ENV PATH "$PATH:$HADOOP_PREFIX/bin"
 
 CMD /start-hadoop; while true; do sleep 10000; done
 

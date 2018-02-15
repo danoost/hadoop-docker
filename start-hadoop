@@ -51,5 +51,3 @@ do
 	    echo Daemon $daemon is not something I know how to start.
     esac
 done
-
-
